@@ -23,6 +23,7 @@ esp-backtrace = { version = "0.18.1", features = [
   "println",
 ] }
 esp-println = { version = "0.16.1", features = ["esp32c3", "log-04"] }
+num_enum = "0.7.5"
 
 
 [profile.dev]

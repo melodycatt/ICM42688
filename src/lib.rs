@@ -1,8 +1,17 @@
 #![no_std]
 
-use esp_hal::{DriverMode, delay::{self, Delay}, i2c::{self, master::{Config, I2c}}, time::Rate};
+use esp_hal::{
+    DriverMode,
+    delay::{self, Delay},
+    i2c::{
+        self,
+        master::{Config, I2c},
+    },
+    time::Rate,
+};
 
 use consts::*;
+use num_enum::TryFromPrimitive;
 #[allow(dead_code)]
 pub mod consts {
     // Accesible from all user banks
@@ -11,61 +20,61 @@ pub mod consts {
     pub const UB0_REG_DEVICE_CONFIG: u8 = 0x11;
     // break
     pub const UB0_REG_DRIVE_CONFIG: u8 = 0x13;
-    pub const UB0_REG_INT_CONFIG: u8   = 0x14;
+    pub const UB0_REG_INT_CONFIG: u8 = 0x14;
     // break
     pub const UB0_REG_FIFO_CONFIG: u8 = 0x16;
     // break
-    pub const UB0_REG_TEMP_DATA1: u8    = 0x1D;
-    pub const UB0_REG_TEMP_DATA0: u8    = 0x1E;
+    pub const UB0_REG_TEMP_DATA1: u8 = 0x1D;
+    pub const UB0_REG_TEMP_DATA0: u8 = 0x1E;
     pub const UB0_REG_ACCEL_DATA_X1: u8 = 0x1F;
     pub const UB0_REG_ACCEL_DATA_X0: u8 = 0x20;
     pub const UB0_REG_ACCEL_DATA_Y1: u8 = 0x21;
     pub const UB0_REG_ACCEL_DATA_Y0: u8 = 0x22;
     pub const UB0_REG_ACCEL_DATA_Z1: u8 = 0x23;
     pub const UB0_REG_ACCEL_DATA_Z0: u8 = 0x24;
-    pub const UB0_REG_GYRO_DATA_X1: u8  = 0x25;
-    pub const UB0_REG_GYRO_DATA_X0: u8  = 0x26;
-    pub const UB0_REG_GYRO_DATA_Y1: u8  = 0x27;
-    pub const UB0_REG_GYRO_DATA_Y0: u8  = 0x28;
-    pub const UB0_REG_GYRO_DATA_Z1: u8  = 0x29;
-    pub const UB0_REG_GYRO_DATA_Z0: u8  = 0x2A;
-    pub const UB0_REG_TMST_FSYNCH: u8   = 0x2B;
-    pub const UB0_REG_TMST_FSYNCL: u8   = 0x2C;
-    pub const UB0_REG_INT_STATUS: u8    = 0x2D;
-    pub const UB0_REG_FIFO_COUNTH: u8   = 0x2E;
-    pub const UB0_REG_FIFO_COUNTL: u8   = 0x2F;
-    pub const UB0_REG_FIFO_DATA: u8     = 0x30;
-    pub const UB0_REG_APEX_DATA0: u8    = 0x31;
-    pub const UB0_REG_APEX_DATA1: u8    = 0x32;
-    pub const UB0_REG_APEX_DATA2: u8    = 0x33;
-    pub const UB0_REG_APEX_DATA3: u8    = 0x34;
-    pub const UB0_REG_APEX_DATA4: u8    = 0x35;
-    pub const UB0_REG_APEX_DATA5: u8    = 0x36;
-    pub const UB0_REG_INT_STATUS2: u8   = 0x37;
-    pub const UB0_REG_INT_STATUS3: u8   = 0x38;
+    pub const UB0_REG_GYRO_DATA_X1: u8 = 0x25;
+    pub const UB0_REG_GYRO_DATA_X0: u8 = 0x26;
+    pub const UB0_REG_GYRO_DATA_Y1: u8 = 0x27;
+    pub const UB0_REG_GYRO_DATA_Y0: u8 = 0x28;
+    pub const UB0_REG_GYRO_DATA_Z1: u8 = 0x29;
+    pub const UB0_REG_GYRO_DATA_Z0: u8 = 0x2A;
+    pub const UB0_REG_TMST_FSYNCH: u8 = 0x2B;
+    pub const UB0_REG_TMST_FSYNCL: u8 = 0x2C;
+    pub const UB0_REG_INT_STATUS: u8 = 0x2D;
+    pub const UB0_REG_FIFO_COUNTH: u8 = 0x2E;
+    pub const UB0_REG_FIFO_COUNTL: u8 = 0x2F;
+    pub const UB0_REG_FIFO_DATA: u8 = 0x30;
+    pub const UB0_REG_APEX_DATA0: u8 = 0x31;
+    pub const UB0_REG_APEX_DATA1: u8 = 0x32;
+    pub const UB0_REG_APEX_DATA2: u8 = 0x33;
+    pub const UB0_REG_APEX_DATA3: u8 = 0x34;
+    pub const UB0_REG_APEX_DATA4: u8 = 0x35;
+    pub const UB0_REG_APEX_DATA5: u8 = 0x36;
+    pub const UB0_REG_INT_STATUS2: u8 = 0x37;
+    pub const UB0_REG_INT_STATUS3: u8 = 0x38;
     // break
-    pub const UB0_REG_SIGNAL_PATH_RESET: u8  = 0x4B;
-    pub const UB0_REG_INTF_CONFIG0: u8       = 0x4C;
-    pub const UB0_REG_INTF_CONFIG1: u8       = 0x4D;
-    pub const UB0_REG_PWR_MGMT0: u8          = 0x4E;
-    pub const UB0_REG_GYRO_CONFIG0: u8       = 0x4F;
-    pub const UB0_REG_ACCEL_CONFIG0: u8      = 0x50;
-    pub const UB0_REG_GYRO_CONFIG1: u8       = 0x51;
+    pub const UB0_REG_SIGNAL_PATH_RESET: u8 = 0x4B;
+    pub const UB0_REG_INTF_CONFIG0: u8 = 0x4C;
+    pub const UB0_REG_INTF_CONFIG1: u8 = 0x4D;
+    pub const UB0_REG_PWR_MGMT0: u8 = 0x4E;
+    pub const UB0_REG_GYRO_CONFIG0: u8 = 0x4F;
+    pub const UB0_REG_ACCEL_CONFIG0: u8 = 0x50;
+    pub const UB0_REG_GYRO_CONFIG1: u8 = 0x51;
     pub const UB0_REG_GYRO_ACCEL_CONFIG0: u8 = 0x52;
-    pub const UB0_REG_ACCEFL_CONFIG1: u8     = 0x53;
-    pub const UB0_REG_TMST_CONFIG: u8        = 0x54;
+    pub const UB0_REG_ACCEFL_CONFIG1: u8 = 0x53;
+    pub const UB0_REG_TMST_CONFIG: u8 = 0x54;
     // break
     pub const UB0_REG_APEX_CONFIG0: u8 = 0x56;
-    pub const UB0_REG_SMD_CONFIG: u8   = 0x57;
+    pub const UB0_REG_SMD_CONFIG: u8 = 0x57;
     // break
     pub const UB0_REG_FIFO_CONFIG1: u8 = 0x5F;
     pub const UB0_REG_FIFO_CONFIG2: u8 = 0x60;
     pub const UB0_REG_FIFO_CONFIG3: u8 = 0x61;
     pub const UB0_REG_FSYNC_CONFIG: u8 = 0x62;
-    pub const UB0_REG_INT_CONFIG0: u8  = 0x63;
-    pub const UB0_REG_INT_CONFIG1: u8  = 0x64;
-    pub const UB0_REG_INT_SOURCE0: u8  = 0x65;
-    pub const UB0_REG_INT_SOURCE1: u8  = 0x66;
+    pub const UB0_REG_INT_CONFIG0: u8 = 0x63;
+    pub const UB0_REG_INT_CONFIG1: u8 = 0x64;
+    pub const UB0_REG_INT_SOURCE0: u8 = 0x65;
+    pub const UB0_REG_INT_SOURCE1: u8 = 0x66;
     // break
     pub const UB0_REG_INT_SOURCE3: u8 = 0x68;
     pub const UB0_REG_INT_SOURCE4: u8 = 0x69;
@@ -76,31 +85,31 @@ pub mod consts {
     pub const UB0_REG_SELF_TEST_CONFIG: u8 = 0x70;
     // break
     pub const UB0_REG_WHO_AM_I: u8 = 0x75;
-    
+
     // User Bank 1
     pub const UB1_REG_SENSOR_CONFIG0: u8 = 0x03;
     // break
-    pub const UB1_REG_GYRO_CONFIG_STATIC2: u8  = 0x0B;
-    pub const UB1_REG_GYRO_CONFIG_STATIC3: u8  = 0x0C;
-    pub const UB1_REG_GYRO_CONFIG_STATIC4: u8  = 0x0D;
-    pub const UB1_REG_GYRO_CONFIG_STATIC5: u8  = 0x0E;
-    pub const UB1_REG_GYRO_CONFIG_STATIC6: u8  = 0x0F;
-    pub const UB1_REG_GYRO_CONFIG_STATIC7: u8  = 0x10;
-    pub const UB1_REG_GYRO_CONFIG_STATIC8: u8  = 0x11;
-    pub const UB1_REG_GYRO_CONFIG_STATIC9: u8  = 0x12;
+    pub const UB1_REG_GYRO_CONFIG_STATIC2: u8 = 0x0B;
+    pub const UB1_REG_GYRO_CONFIG_STATIC3: u8 = 0x0C;
+    pub const UB1_REG_GYRO_CONFIG_STATIC4: u8 = 0x0D;
+    pub const UB1_REG_GYRO_CONFIG_STATIC5: u8 = 0x0E;
+    pub const UB1_REG_GYRO_CONFIG_STATIC6: u8 = 0x0F;
+    pub const UB1_REG_GYRO_CONFIG_STATIC7: u8 = 0x10;
+    pub const UB1_REG_GYRO_CONFIG_STATIC8: u8 = 0x11;
+    pub const UB1_REG_GYRO_CONFIG_STATIC9: u8 = 0x12;
     pub const UB1_REG_GYRO_CONFIG_STATIC10: u8 = 0x13;
     // break
     pub const UB1_REG_XG_ST_DATA: u8 = 0x5F;
     pub const UB1_REG_YG_ST_DATA: u8 = 0x60;
     pub const UB1_REG_ZG_ST_DATA: u8 = 0x61;
-    pub const UB1_REG_TMSTVAL0: u8   = 0x62;
-    pub const UB1_REG_TMSTVAL1: u8   = 0x63;
-    pub const UB1_REG_TMSTVAL2: u8   = 0x64;
+    pub const UB1_REG_TMSTVAL0: u8 = 0x62;
+    pub const UB1_REG_TMSTVAL1: u8 = 0x63;
+    pub const UB1_REG_TMSTVAL2: u8 = 0x64;
     // break
     pub const UB1_REG_INTF_CONFIG4: u8 = 0x7A;
     pub const UB1_REG_INTF_CONFIG5: u8 = 0x7B;
     pub const UB1_REG_INTF_CONFIG6: u8 = 0x7C;
-    
+
     // User Bank 2
     pub const UB2_REG_ACCEL_CONFIG_STATIC2: u8 = 0x03;
     pub const UB2_REG_ACCEL_CONFIG_STATIC3: u8 = 0x04;
@@ -109,7 +118,7 @@ pub mod consts {
     pub const UB2_REG_XA_ST_DATA: u8 = 0x3B;
     pub const UB2_REG_YA_ST_DATA: u8 = 0x3C;
     pub const UB2_REG_ZA_ST_DATA: u8 = 0x3D;
-    
+
     // User Bank 4
     pub const UB4_REG_APEX_CONFIG1: u8 = 0x40;
     pub const UB4_REG_APEX_CONFIG2: u8 = 0x41;
@@ -124,11 +133,11 @@ pub mod consts {
     pub const UB4_REG_ACCEL_WOM_X_THR: u8 = 0x4A;
     pub const UB4_REG_ACCEL_WOM_Y_THR: u8 = 0x4B;
     pub const UB4_REG_ACCEL_WOM_Z_THR: u8 = 0x4C;
-    pub const UB4_REG_INT_SOURCE6: u8     = 0x4D;
-    pub const UB4_REG_INT_SOURCE7: u8     = 0x4E;
-    pub const UB4_REG_INT_SOURCE8: u8     = 0x4F;
-    pub const UB4_REG_INT_SOURCE9: u8     = 0x50;
-    pub const UB4_REG_INT_SOURCE10: u8    = 0x51;
+    pub const UB4_REG_INT_SOURCE6: u8 = 0x4D;
+    pub const UB4_REG_INT_SOURCE7: u8 = 0x4E;
+    pub const UB4_REG_INT_SOURCE8: u8 = 0x4F;
+    pub const UB4_REG_INT_SOURCE9: u8 = 0x50;
+    pub const UB4_REG_INT_SOURCE10: u8 = 0x51;
     // break
     pub const UB4_REG_OFFSET_USER0: u8 = 0x77;
     pub const UB4_REG_OFFSET_USER1: u8 = 0x78;
@@ -141,62 +150,67 @@ pub mod consts {
     pub const UB4_REG_OFFSET_USER8: u8 = 0x7F;
 }
 
-#[derive(Clone, Copy)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, TryFromPrimitive)]
 pub enum GyroFS {
-    Dps2000   = 0x00,
-    Dps1000   = 0x01,
-    Dps500    = 0x02,
-    Dps250    = 0x03,
-    Dps125    = 0x04,
-    Dps62_5   = 0x05,
-    Dps31_25  = 0x06,
-    Dps15_625 = 0x07
+    Dps2000 = 0x00,
+    Dps1000 = 0x01,
+    Dps500 = 0x02,
+    Dps250 = 0x03,
+    Dps125 = 0x04,
+    Dps62_5 = 0x05,
+    Dps31_25 = 0x06,
+    Dps15_625 = 0x07,
 }
 
-#[derive(Clone, Copy)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, TryFromPrimitive)]
 pub enum AccelFS {
-	Gpm16 = 0x00,
-	Gpm8  = 0x01,
-	Gpm4  = 0x02,
-	Gpm2  = 0x03
+    Gpm16 = 0x00,
+    Gpm8 = 0x01,
+    Gpm4 = 0x02,
+    Gpm2 = 0x03,
 }
 
-#[derive(Clone, Copy)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, TryFromPrimitive)]
 pub enum ODR {
-    Odr32k    = 0x01,  // LN mode only
-    Odr16k    = 0x02,  // LN mode only
-    Odr8k     = 0x03,  // LN mode only
-    Odr4k     = 0x04,  // LN mode only
-    Odr2k     = 0x05,  // LN mode only
-    Odr1k     = 0x06,  // LN mode only
-    Odr200    = 0x07,
-    Odr100    = 0x08,
-    Odr50     = 0x09,
-    Odr25     = 0x0A,
-    Odr12_5   = 0x0B,
-    Odr6a25   = 0x0C,  // LP mode only (accel only)
-    Odr3a125  = 0x0D,  // LP mode only (accel only)
-    Odr1a5625 = 0x0E,  // LP mode only (accel only)
-    Odr500    = 0x0F,
+    Odr32k = 0x01, // LN mode only
+    Odr16k = 0x02, // LN mode only
+    Odr8k = 0x03,  // LN mode only
+    Odr4k = 0x04,  // LN mode only
+    Odr2k = 0x05,  // LN mode only
+    Odr1k = 0x06,  // LN mode only
+    Odr200 = 0x07,
+    Odr100 = 0x08,
+    Odr50 = 0x09,
+    Odr25 = 0x0A,
+    Odr12_5 = 0x0B,
+    Odr6a25 = 0x0C,   // LP mode only (accel only)
+    Odr3a125 = 0x0D,  // LP mode only (accel only)
+    Odr1a5625 = 0x0E, // LP mode only (accel only)
+    Odr500 = 0x0F,
 }
 
-#[derive(Clone, Copy)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, TryFromPrimitive)]
 pub enum GyroNFBWsel {
     NfBW1449Hz = 0x00,
-    NfBW680z   = 0x01,
-    NfBW329Hz  = 0x02,
-    NfBW162Hz  = 0x03,
-    NfBW80Hz   = 0x04,
-    NfBW40Hz   = 0x05,
-    NfBW20Hz   = 0x06,
-    NfBW10Hz   = 0x07,
+    NfBW680z = 0x01,
+    NfBW329Hz = 0x02,
+    NfBW162Hz = 0x03,
+    NfBW80Hz = 0x04,
+    NfBW40Hz = 0x05,
+    NfBW20Hz = 0x06,
+    NfBW10Hz = 0x07,
 }
 
-#[derive(Clone, Copy)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, TryFromPrimitive)]
 pub enum UIFiltOrd {
-    FirstOrder  = 0x00,
+    FirstOrder = 0x00,
     SecondOrder = 0x01,
-    ThirdOrder  = 0x02,
+    ThirdOrder = 0x02,
 }
 
 pub struct Icm42688<'a, 'b: 'a, D: DriverMode> {
@@ -204,7 +218,6 @@ pub struct Icm42688<'a, 'b: 'a, D: DriverMode> {
     i2c: &'a mut I2c<'b, D>,
 
     // todo spi but im not doing it
-
     t: f32,
     acc: [f32; 3],
     gyr: [f32; 3],
@@ -217,7 +230,6 @@ pub struct Icm42688<'a, 'b: 'a, D: DriverMode> {
     raw_gyr_bias: [i32; 3],
     // acc_offset: [i16; 3],
     // gyr_offset: [i16; 3],
-
     acc_scale: f32,
     gyro_scale: f32,
 
@@ -229,7 +241,6 @@ pub struct Icm42688<'a, 'b: 'a, D: DriverMode> {
     acc_s: [f32; 3],
     // acc_max: [f32; 3],
     // acc_min: [f32; 3],
-
     gyr_bd: [f32; 3],
     pub gyr_b: [f32; 3],
 
@@ -270,7 +281,9 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         Ok(buf[0])
     }
     pub fn set_bank(&mut self, bank: u8) -> Result<(), Error> {
-        if self.bank == bank { return Ok(()) }
+        if self.bank == bank {
+            return Ok(());
+        }
         self.bank = bank;
         self.write_register(REG_BANK_SEL, bank)
     }
@@ -316,11 +329,12 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
     }
 
     pub fn begin(&mut self) -> Result<(), Error> {
-        self.i2c.apply_config(&Config::default().with_frequency(Rate::from_hz(Self::I2C_CLK)))?;
+        self.i2c
+            .apply_config(&Config::default().with_frequency(Rate::from_hz(Self::I2C_CLK)))?;
         self.reset()?;
 
         if self.who_am_i()? != Self::WHOAMI {
-            return Err(Error::WhoAmIError)
+            return Err(Error::WhoAmIError);
         }
 
         self.write_register(UB0_REG_PWR_MGMT0, 0x0F)?;
@@ -360,7 +374,7 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         self.gyr_b = self.gyr_bd;
 
         self.set_gyro_fs(current_fs)?;
-        
+
         Ok(())
     }
 
@@ -376,13 +390,7 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
     pub fn get_accel_fs(&mut self) -> Result<AccelFS, Error> {
         self.set_bank(0)?;
         let reg = self.read_register_byte(UB0_REG_ACCEL_CONFIG0)?;
-        let ret = match (reg & 0xE0) >> 5 {
-            0x00 => AccelFS::Gpm16,
-            0x01 => AccelFS::Gpm8,
-            0x02 => AccelFS::Gpm4,
-            0x03 => AccelFS::Gpm2,
-            _ => panic!("hopefully this doesnt happen..?")
-        };
+        let ret = ((reg & 0xE0) >> 5).try_into().unwrap();
         Ok(ret)
     }
     pub fn set_gyro_fs(&mut self, fssel: GyroFS) -> Result<(), Error> {
@@ -397,17 +405,7 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
     pub fn get_gyro_fs(&mut self) -> Result<GyroFS, Error> {
         self.set_bank(0)?;
         let reg = self.read_register_byte(UB0_REG_GYRO_CONFIG0)?;
-        let ret = match (reg & 0xE0) >> 5 {
-            0x00 => GyroFS::Dps2000,
-            0x01 => GyroFS::Dps1000,
-            0x02 => GyroFS::Dps500,
-            0x03 => GyroFS::Dps250,
-            0x04 => GyroFS::Dps125,
-            0x05 => GyroFS::Dps62_5,
-            0x06 => GyroFS::Dps31_25,
-            0x07 => GyroFS::Dps15_625,
-            _ => panic!("hopefully this doesnt happen..?")
-        };
+        let ret = ((reg & 0xE0) >> 5).try_into().unwrap();
         Ok(ret)
     }
     pub fn set_gyro_odr(&mut self, odr: ODR) -> Result<(), Error> {
@@ -417,9 +415,12 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         self.write_register(UB0_REG_GYRO_CONFIG0, reg)?;
         Ok(())
     }
-    /*pub fn get_gyro_odr(&mut self) -> Result<i32, Error> {
-
-    } ????? */ 
+    pub fn get_gyro_odr(&mut self) -> Result<ODR, Error> {
+        self.set_bank(0)?;
+        let mut reg = self.read_register_byte(UB0_REG_GYRO_CONFIG0)?;
+        let val = (reg & 0x0F).try_into().unwrap();
+        Ok(val)
+    }
     pub fn set_accel_odr(&mut self, odr: ODR) -> Result<(), Error> {
         self.set_bank(0)?;
         let mut reg = self.read_register_byte(UB0_REG_ACCEL_CONFIG0)?;
@@ -427,19 +428,28 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         self.write_register(UB0_REG_ACCEL_CONFIG0, reg)?;
         Ok(())
     }
-    /*pub fn get_accel_odr(&mut self) -> Result<i32, Error> {
-
-    } ????????? */ 
+    pub fn get_accel_odr(&mut self) -> Result<ODR, Error> {
+        self.set_bank(0)?;
+        let mut reg = self.read_register_byte(UB0_REG_ACCEL_CONFIG0)?;
+        let val = (reg & 0x0F).try_into().unwrap();
+        Ok(val)
+    }
 
     pub fn set_filters(&mut self, gyro_filters: bool, acc_filters: bool) -> Result<(), Error> {
         self.set_bank(1)?;
 
         if gyro_filters {
-            self.write_register(UB1_REG_GYRO_CONFIG_STATIC2, Self::GYRO_NF_ENABLE | Self::GYRO_AAF_ENABLE)?;
+            self.write_register(
+                UB1_REG_GYRO_CONFIG_STATIC2,
+                Self::GYRO_NF_ENABLE | Self::GYRO_AAF_ENABLE,
+            )?;
         } else {
-            self.write_register(UB1_REG_GYRO_CONFIG_STATIC2, Self::GYRO_NF_DISABLE | Self::GYRO_AAF_DISABLE)?;
+            self.write_register(
+                UB1_REG_GYRO_CONFIG_STATIC2,
+                Self::GYRO_NF_DISABLE | Self::GYRO_AAF_DISABLE,
+            )?;
         }
-        
+
         self.set_bank(2)?;
 
         if acc_filters {
@@ -451,7 +461,7 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         self.set_bank(0)?;
         Ok(())
     }
-    
+
     pub fn enable_data_ready_interrupt(&mut self) -> Result<(), Error> {
         self.set_bank(0)?;
         self.write_register(UB0_REG_INT_CONFIG, 0x18 | 0x03)?;
@@ -492,7 +502,7 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         self.set_bank(0)?;
         let mut buf = [0; 14];
         self.read_registers(UB0_REG_TEMP_DATA1, &mut buf)?;
-        let mut raw_meas = [0;7];
+        let mut raw_meas = [0; 7];
         for i in 0..7 {
             raw_meas[i] = ((buf[i * 2] as i16) << 8) | buf[i * 2 + 1] as i16
         }
@@ -508,18 +518,34 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         Ok(())
     }
 
-    pub const fn acc(&mut self) -> [f32;3] { return self.acc }
-    pub const fn gyr(&mut self) -> [f32;3] { return self.gyr }
+    pub const fn acc(&mut self) -> [f32; 3] {
+        return self.acc;
+    }
+    pub const fn gyr(&mut self) -> [f32; 3] {
+        return self.gyr;
+    }
 
-    pub const fn temp(&mut self) -> f32 { return self.t }
+    pub const fn temp(&mut self) -> f32 {
+        return self.t;
+    }
 
-    pub const fn raw_acc(&mut self) -> [i16;3] { return self.raw_acc }
-    pub const fn raw_gyr(&mut self) -> [i16;3] { return self.raw_gyr }
+    pub const fn raw_acc(&mut self) -> [i16; 3] {
+        return self.raw_acc;
+    }
+    pub const fn raw_gyr(&mut self) -> [i16; 3] {
+        return self.raw_gyr;
+    }
 
-    pub const fn raw_temp(&mut self) -> i16 { return self.raw_t }
+    pub const fn raw_temp(&mut self) -> i16 {
+        return self.raw_t;
+    }
 
-    pub const fn raw_acc_bias(&mut self) -> [i32;3] { return self.raw_acc_bias }
-    pub const fn raw_gyr_bias(&mut self) -> [i32;3] { return self.raw_gyr_bias }
+    pub const fn raw_acc_bias(&mut self) -> [i32; 3] {
+        return self.raw_acc_bias;
+    }
+    pub const fn raw_gyr_bias(&mut self) -> [i32; 3] {
+        return self.raw_gyr_bias;
+    }
 
     pub fn set_acc_x_offset(&mut self, offset: i16) -> Result<(), Error> {
         self.set_bank(4)?;
@@ -571,7 +597,7 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         self.write_register(UB4_REG_OFFSET_USER4, reg2)
     }
 
-    pub fn get_accel_res(&mut self) -> Result<f32, Error>{
+    pub fn get_accel_res(&mut self) -> Result<f32, Error> {
         let current_accfs = self.get_accel_fs()?;
         let acc_res = match current_accfs {
             // todo is this correct? the cpp library does this but surely its a mistake
@@ -581,7 +607,7 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         };
         Ok(acc_res)
     }
-    pub fn get_gyro_res(&mut self) -> Result<f32, Error>{
+    pub fn get_gyro_res(&mut self) -> Result<f32, Error> {
         let current_gyrfs = self.get_gyro_fs()?;
         let gyr_res = match current_gyrfs {
             GyroFS::Dps2000 => 2000. / 32768.,
@@ -604,6 +630,7 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
     // spi
     // compute & set all offset biases
 
+    // bytemuck
     // calibrate acceleration - the function confused me so i didnt wanna do it
 
     // ^^^ a lot here isnt done because i dont need it and im kinda tired of translating all this code
@@ -642,3 +669,4 @@ impl From<i2c::master::ConfigError> for Error {
         Error::ConfigError(value)
     }
 }
+
