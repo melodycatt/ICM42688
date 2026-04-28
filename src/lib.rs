@@ -1,13 +1,11 @@
 #![no_std]
 
+use core::{f32::consts::PI, marker::PhantomData};
+
 use esp_hal::{
     DriverMode,
     delay::{self, Delay},
-    i2c::{
-        self,
-        master::{Config, I2c},
-    },
-    time::Rate,
+    i2c::{self, master::I2c},
 };
 
 use consts::*;
@@ -61,7 +59,7 @@ pub mod consts {
     pub const UB0_REG_ACCEL_CONFIG0: u8 = 0x50;
     pub const UB0_REG_GYRO_CONFIG1: u8 = 0x51;
     pub const UB0_REG_GYRO_ACCEL_CONFIG0: u8 = 0x52;
-    pub const UB0_REG_ACCEFL_CONFIG1: u8 = 0x53;
+    pub const UB0_REG_ACCEL_CONFIG1: u8 = 0x53;
     pub const UB0_REG_TMST_CONFIG: u8 = 0x54;
     // break
     pub const UB0_REG_APEX_CONFIG0: u8 = 0x56;
@@ -213,9 +211,19 @@ pub enum UIFiltOrd {
     ThirdOrder = 0x02,
 }
 
-pub struct Icm42688<'a, 'b: 'a, D: DriverMode> {
+/// this uses an unsafe pointer
+/// its freaky i know but its the best way i could think of
+/// do not drop and recreate this because all the config will be gone
+///
+/// preferably 400khz i2c clock speed
+///
+/// # Safety
+/// because this uses a pointer associated with an &'a lifetime, this allows aliasing
+/// make sure you are aware of aliasing when you use this
+pub struct Icm42688<'a, 'i2c: 'a, D: DriverMode> {
     address: u8,
-    i2c: &'a mut I2c<'b, D>,
+    i2c: *mut I2c<'i2c, D>,
+    _phantom: PhantomData<&'a ()>,
 
     // todo spi but im not doing it
     t: f32,
@@ -247,8 +255,8 @@ pub struct Icm42688<'a, 'b: 'a, D: DriverMode> {
     bank: u8,
 }
 
-impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
-    const I2C_CLK: u32 = 400_000;
+impl<'a, 'b, D: DriverMode> Icm42688<'a, 'b, D> {
+    //const I2C_CLK: u32 = 400_000;
     const WHOAMI: u8 = 0x47;
     const NUM_CALIB_SAMPLES: i32 = 1000;
     const TEMP_DATA_REG_SCALE: f32 = 123.48;
@@ -267,17 +275,21 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
     const ACCEL_AAF_ENABLE: u8 = 0x00;
     const ACCEL_AAF_DISABLE: u8 = 0x01;
 
+    #[allow(clippy::mut_from_ref)]
+    fn i2c(&self) -> &mut I2c<'b, D> {
+        unsafe { &mut *self.i2c }
+    }
     pub fn write_register(&mut self, sub_addr: u8, data: u8) -> Result<(), Error> {
-        self.i2c.write(self.address, &[sub_addr, data])?;
+        self.i2c().write(self.address, &[sub_addr, data])?;
         Ok(())
     }
     pub fn read_registers(&mut self, sub_addr: u8, dest: &mut [u8]) -> Result<(), Error> {
-        self.i2c.write_read(self.address, &[sub_addr], dest)?;
+        self.i2c().write_read(self.address, &[sub_addr], dest)?;
         Ok(())
     }
     pub fn read_register_byte(&mut self, sub_addr: u8) -> Result<u8, Error> {
         let mut buf = [0];
-        self.i2c.write_read(self.address, &[sub_addr], &mut buf)?;
+        self.i2c().write_read(self.address, &[sub_addr], &mut buf)?;
         Ok(buf[0])
     }
     pub fn set_bank(&mut self, bank: u8) -> Result<(), Error> {
@@ -292,7 +304,8 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         self.set_bank(0)?;
         self.write_register(UB0_REG_DEVICE_CONFIG, 0x01)?;
         let delay = delay::Delay::new();
-        delay.delay_millis(1);
+        delay.delay_millis(10);
+        self.set_bank(0)?;
         Ok(())
     }
 
@@ -304,10 +317,11 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
 
     // public
 
-    pub fn new(bus: &'a mut I2c<'b, D>, addr: u8) -> Self {
+    pub fn new(bus: &'a I2c<'b, D>, addr: u8) -> Self {
         Self {
             address: addr,
-            i2c: bus,
+            i2c: bus as *const _ as *mut _,
+            _phantom: PhantomData,
             t: 0.,
             acc: [0.; 3],
             gyr: [0.; 3],
@@ -329,8 +343,10 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
     }
 
     pub fn begin(&mut self) -> Result<(), Error> {
-        self.i2c
-            .apply_config(&Config::default().with_frequency(Rate::from_hz(Self::I2C_CLK)))?;
+        // because we allow aliasing i dont want to change anything fundamentally about the i2c
+        // driver
+        //self.i2c()
+        //    .apply_config(&Config::default().with_frequency(Rate::from_hz(Self::I2C_CLK)))?;
         self.reset()?;
 
         if self.who_am_i()? != Self::WHOAMI {
@@ -347,34 +363,41 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         Ok(())
     }
 
-    // so that the driver can be dropped and the ic doesnt need to be reset the next time it is create
+    /// so that the driver can be dropped and the ic doesnt need to be reset the next time it is created
+    /// this should never be needed anymore but ill leave it here
     pub fn detect_config(&mut self) -> Result<(), Error> {
         self.accel_fs = self.get_accel_fs()?;
         self.gyro_fs = self.get_gyro_fs()?;
         self.acc_scale = (1 << (4 - self.accel_fs as u8)) as f32 / 32768.;
         self.gyro_scale = (2000. / (1 << (self.gyro_fs as u8)) as f32) / 32768.;
-        self.calibrate_gyro()?;
 
         Ok(())
     }
 
     pub fn calibrate_gyro(&mut self) -> Result<(), Error> {
+        // Save current full scale so we reset later
         let current_fs = self.gyro_fs;
-        self.set_gyro_fs(GyroFS::Dps250)?;
+        self.set_gyro_fs(GyroFS::Dps250)?; // low range for best resolution
 
-        self.gyr_bd = [0.; 3];
+        // Zero accumulators
+        let mut sum = [0f32; 3];
+
         let delay = Delay::new();
         for _ in 0..Self::NUM_CALIB_SAMPLES {
             self.get_agt()?;
-            self.gyr_bd[0] += (self.gyr[0] + self.gyr_b[0]) / Self::NUM_CALIB_SAMPLES as f32;
-            self.gyr_bd[1] += (self.gyr[1] + self.gyr_b[1]) / Self::NUM_CALIB_SAMPLES as f32;
-            self.gyr_bd[2] += (self.gyr[2] + self.gyr_b[2]) / Self::NUM_CALIB_SAMPLES as f32;
+            sum[0] += self.gyr[0];
+            sum[1] += self.gyr[1];
+            sum[2] += self.gyr[2];
             delay.delay_millis(1);
         }
-        self.gyr_b = self.gyr_bd;
 
+        // Compute mean
+        self.gyr_b[0] = sum[0] / Self::NUM_CALIB_SAMPLES as f32;
+        self.gyr_b[1] = sum[1] / Self::NUM_CALIB_SAMPLES as f32;
+        self.gyr_b[2] = sum[2] / Self::NUM_CALIB_SAMPLES as f32;
+
+        // Restore full scale
         self.set_gyro_fs(current_fs)?;
-
         Ok(())
     }
 
@@ -417,7 +440,7 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
     }
     pub fn get_gyro_odr(&mut self) -> Result<ODR, Error> {
         self.set_bank(0)?;
-        let mut reg = self.read_register_byte(UB0_REG_GYRO_CONFIG0)?;
+        let reg = self.read_register_byte(UB0_REG_GYRO_CONFIG0)?;
         let val = (reg & 0x0F).try_into().unwrap();
         Ok(val)
     }
@@ -430,7 +453,7 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
     }
     pub fn get_accel_odr(&mut self) -> Result<ODR, Error> {
         self.set_bank(0)?;
-        let mut reg = self.read_register_byte(UB0_REG_ACCEL_CONFIG0)?;
+        let reg = self.read_register_byte(UB0_REG_ACCEL_CONFIG0)?;
         let val = (reg & 0x0F).try_into().unwrap();
         Ok(val)
     }
@@ -462,24 +485,50 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
         Ok(())
     }
 
+    pub fn set_gyro_nf_bw(&mut self, bw: GyroNFBWsel) -> Result<(), Error> {
+        self.set_bank(1)?;
+        let mut reg = self.read_register_byte(UB1_REG_GYRO_CONFIG_STATIC10)?;
+
+        reg &= !0b1110000;
+
+        // set new bandwidth
+        reg |= (bw as u8) << 4;
+
+        self.write_register(UB0_REG_GYRO_CONFIG1, reg)?;
+        Ok(())
+    }
+
+    pub fn set_ui_filter_order(&mut self, ord: UIFiltOrd) -> Result<(), Error> {
+        self.set_bank(0)?;
+        let mut reg = self.read_register_byte(UB0_REG_GYRO_CONFIG1)?;
+
+        // clear bits 3-4
+        reg &= !0b1100;
+
+        // set new order
+        reg |= (ord as u8) << 3;
+
+        self.write_register(UB0_REG_GYRO_CONFIG1, reg)?;
+        Ok(())
+    }
+
     pub fn enable_data_ready_interrupt(&mut self) -> Result<(), Error> {
         self.set_bank(0)?;
         self.write_register(UB0_REG_INT_CONFIG, 0x18 | 0x03)?;
         let mut reg = self.read_register_byte(UB0_REG_INTF_CONFIG1)?;
         reg &= !0x10;
-        self.write_register(UB0_REG_INT_CONFIG, reg)?;
+        self.write_register(UB0_REG_INT_CONFIG1, reg)?;
 
         self.write_register(UB0_REG_INT_SOURCE0, 0x18)
     }
 
     pub fn disable_data_ready_interrupt(&mut self) -> Result<(), Error> {
         self.set_bank(0)?;
-        self.write_register(UB0_REG_INT_CONFIG1, 0x18 | 0x03)?;
         let mut reg = self.read_register_byte(UB0_REG_INTF_CONFIG1)?;
-        reg &= !0x10;
+        reg |= 0x10;
         self.write_register(UB0_REG_INT_CONFIG1, reg)?;
 
-        self.write_register(UB0_REG_INT_SOURCE0, 0x18)
+        self.write_register(UB0_REG_INT_SOURCE0, 0x10)
     }
 
     pub fn get_agt(&mut self) -> Result<(), Error> {
@@ -519,32 +568,32 @@ impl<'a, 'b: 'a, D: DriverMode> Icm42688<'a, 'b, D> {
     }
 
     pub const fn acc(&mut self) -> [f32; 3] {
-        return self.acc;
+        self.acc
     }
     pub const fn gyr(&mut self) -> [f32; 3] {
-        return self.gyr;
+        self.gyr
     }
 
     pub const fn temp(&mut self) -> f32 {
-        return self.t;
+        self.t
     }
 
     pub const fn raw_acc(&mut self) -> [i16; 3] {
-        return self.raw_acc;
+        self.raw_acc
     }
     pub const fn raw_gyr(&mut self) -> [i16; 3] {
-        return self.raw_gyr;
+        self.raw_gyr
     }
 
     pub const fn raw_temp(&mut self) -> i16 {
-        return self.raw_t;
+        self.raw_t
     }
 
     pub const fn raw_acc_bias(&mut self) -> [i32; 3] {
-        return self.raw_acc_bias;
+        self.raw_acc_bias
     }
     pub const fn raw_gyr_bias(&mut self) -> [i32; 3] {
-        return self.raw_gyr_bias;
+        self.raw_gyr_bias
     }
 
     pub fn set_acc_x_offset(&mut self, offset: i16) -> Result<(), Error> {
@@ -669,4 +718,3 @@ impl From<i2c::master::ConfigError> for Error {
         Error::ConfigError(value)
     }
 }
-
