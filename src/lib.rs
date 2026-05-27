@@ -10,6 +10,7 @@ use esp_hal::{
 
 use consts::*;
 use num_enum::TryFromPrimitive;
+
 #[allow(dead_code)]
 pub mod consts {
     // Accesible from all user banks
@@ -350,7 +351,7 @@ impl<'a, 'b, D: DriverMode> Icm42688<'a, 'b, D> {
         self.reset()?;
 
         if self.who_am_i()? != Self::WHOAMI {
-            return Err(Error::WhoAmIError);
+            return Err(Error::WhoAmI);
         }
 
         self.write_register(UB0_REG_PWR_MGMT0, 0x0F)?;
@@ -704,17 +705,17 @@ impl<'a, 'b, D: DriverMode> Icm42688<'a, 'b, D> {
 
 #[derive(Debug)]
 pub enum Error {
-    I2cError(i2c::master::Error),
-    ConfigError(i2c::master::ConfigError),
-    WhoAmIError,
+    I2c(i2c::master::Error),
+    Config(i2c::master::ConfigError),
+    WhoAmI,
 }
 impl From<i2c::master::Error> for Error {
     fn from(value: i2c::master::Error) -> Self {
-        Error::I2cError(value)
+        Error::I2c(value)
     }
 }
 impl From<i2c::master::ConfigError> for Error {
     fn from(value: i2c::master::ConfigError) -> Self {
-        Error::ConfigError(value)
+        Error::Config(value)
     }
 }
